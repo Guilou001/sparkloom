@@ -1,0 +1,9 @@
+packages:
+  - "apps/desktop/ui"
+  - "apps/web"
+  - "packages/shared"
+  - "workers"
+onlyBuiltDependencies:
+  - "esbuild"
+  - "workerd"
+  - "sharp"

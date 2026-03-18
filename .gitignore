@@ -1,0 +1,46 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Build outputs
+target/
+dist/
+.output/
+
+# Tauri
+apps/desktop/gen/
+
+# Environment & Secrets
+.env
+.env.*
+.dev.vars
+*.pem
+*.key
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Cloudflare
+.wrangler/
+.mf/
+
+# Logs
+*.log
+
+# Recordings (local video files)
+*.mov
+*.mp4
+*.m4s
+
+# Local settings
+.claude/settings.local.json
+
+# TypeScript build info
+*.tsbuildinfo

@@ -1,0 +1,2 @@
+-- Reference schema — see migrations/0001_init.sql for the actual migration.
+-- This file is for documentation only.

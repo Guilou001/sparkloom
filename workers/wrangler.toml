@@ -1,0 +1,22 @@
+name = "sparkloom-api"
+main = "src/index.ts"
+compatibility_date = "2026-01-01"
+compatibility_flags = ["nodejs_compat"]
+
+[vars]
+CORS_ORIGIN = "*"
+
+# D1 Database — run `wrangler d1 create sparkloom-db` then paste the ID here
+[[d1_databases]]
+binding = "DB"
+database_name = "sparkloom-db"
+database_id = "local-dev-placeholder"
+migrations_dir = "migrations"
+
+# R2 Bucket — run `wrangler r2 bucket create sparkloom-videos` to create
+[[r2_buckets]]
+binding = "VIDEOS"
+bucket_name = "sparkloom-videos"
+
+# Secrets (set via `wrangler secret put API_KEY`):
+# - API_KEY: Bearer token for desktop app authentication

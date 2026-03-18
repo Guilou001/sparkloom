@@ -1,0 +1,22 @@
+{
+  "name": "sparkloom",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "pnpm --filter @sparkloom/desktop-ui dev",
+    "build": "pnpm --filter @sparkloom/desktop-ui build",
+    "tauri": "cd apps/desktop && cargo tauri",
+    "tauri:dev": "cd apps/desktop && cargo tauri dev",
+    "tauri:build": "cd apps/desktop && cargo tauri build",
+    "worker:dev": "pnpm --filter @sparkloom/workers dev",
+    "worker:deploy": "pnpm --filter @sparkloom/workers deploy",
+    "web:dev": "pnpm --filter @sparkloom/web dev",
+    "web:build": "pnpm --filter @sparkloom/web build",
+    "typecheck": "pnpm -r typecheck",
+    "lint": "pnpm -r lint"
+  },
+  "engines": {
+    "node": ">=22.0.0",
+    "pnpm": ">=10.0.0"
+  }
+}
