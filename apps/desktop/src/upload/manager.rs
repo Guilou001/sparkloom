@@ -196,7 +196,8 @@ async fn upload_segment_with_retry(
             Err(e) => {
                 last_err = e;
                 if attempt < MAX_RETRIES - 1 {
-                    let delay_ms = 500 * 2u64.pow(attempt);
+                    // Exponential backoff: 1s, 2s, 4s (capped at 30s)
+                    let delay_ms = (1000 * 2u64.pow(attempt)).min(30_000);
                     tracing::warn!(
                         "Upload segment {segment_index} attempt {} failed, retrying in {delay_ms}ms: {last_err}",
                         attempt + 1

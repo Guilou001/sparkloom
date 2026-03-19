@@ -2,6 +2,52 @@ import { Hono } from "hono";
 import type { Env } from "../index";
 import type { SaveTranscriptionRequest, SaveSummaryRequest } from "@sparkloom/shared";
 
+// Public read-only routes (mounted before auth middleware)
+const transcriptionPublic = new Hono<{ Bindings: Env }>();
+
+// GET /api/videos/:id/transcription — Get transcription + words (public)
+transcriptionPublic.get("/:id/transcription", async (c) => {
+  const videoId = c.req.param("id");
+
+  const trans = await c.env.DB.prepare("SELECT * FROM transcriptions WHERE video_id = ?")
+    .bind(videoId)
+    .first();
+
+  if (!trans) {
+    return c.json({ error: "Transcription not found" }, 404);
+  }
+
+  const words = await c.env.DB.prepare(
+    "SELECT word, start_ms, end_ms, confidence FROM transcript_words WHERE video_id = ? ORDER BY start_ms"
+  )
+    .bind(videoId)
+    .all();
+
+  return c.json({ ...trans, words: words.results });
+});
+
+// GET /api/videos/:id/summary — Get summary (public)
+transcriptionPublic.get("/:id/summary", async (c) => {
+  const videoId = c.req.param("id");
+
+  const summary = await c.env.DB.prepare("SELECT * FROM video_summaries WHERE video_id = ?")
+    .bind(videoId)
+    .first();
+
+  if (!summary) {
+    return c.json({ error: "Summary not found" }, 404);
+  }
+
+  return c.json({
+    ...summary,
+    key_points: summary.key_points ? JSON.parse(summary.key_points as string) : null,
+    action_items: summary.action_items ? JSON.parse(summary.action_items as string) : null,
+    chapters: summary.chapters ? JSON.parse(summary.chapters as string) : null,
+    topics: summary.topics ? JSON.parse(summary.topics as string) : null,
+  });
+});
+
+// Authenticated routes (mounted after auth middleware)
 const transcription = new Hono<{ Bindings: Env }>();
 
 // POST /api/videos/:id/transcription — Save transcription from desktop app
@@ -40,27 +86,6 @@ transcription.post("/:id/transcription", async (c) => {
   return c.json({ id }, 201);
 });
 
-// GET /api/videos/:id/transcription — Get transcription + words
-transcription.get("/:id/transcription", async (c) => {
-  const videoId = c.req.param("id");
-
-  const trans = await c.env.DB.prepare("SELECT * FROM transcriptions WHERE video_id = ?")
-    .bind(videoId)
-    .first();
-
-  if (!trans) {
-    return c.json({ error: "Transcription not found" }, 404);
-  }
-
-  const words = await c.env.DB.prepare(
-    "SELECT word, start_ms, end_ms, confidence FROM transcript_words WHERE video_id = ? ORDER BY start_ms"
-  )
-    .bind(videoId)
-    .all();
-
-  return c.json({ ...trans, words: words.results });
-});
-
 // POST /api/videos/:id/summary — Save AI summary
 transcription.post("/:id/summary", async (c) => {
   const videoId = c.req.param("id");
@@ -97,26 +122,4 @@ transcription.post("/:id/summary", async (c) => {
   return c.json({ id }, 201);
 });
 
-// GET /api/videos/:id/summary — Get summary
-transcription.get("/:id/summary", async (c) => {
-  const videoId = c.req.param("id");
-
-  const summary = await c.env.DB.prepare("SELECT * FROM video_summaries WHERE video_id = ?")
-    .bind(videoId)
-    .first();
-
-  if (!summary) {
-    return c.json({ error: "Summary not found" }, 404);
-  }
-
-  // Parse JSON fields
-  return c.json({
-    ...summary,
-    key_points: summary.key_points ? JSON.parse(summary.key_points as string) : null,
-    action_items: summary.action_items ? JSON.parse(summary.action_items as string) : null,
-    chapters: summary.chapters ? JSON.parse(summary.chapters as string) : null,
-    topics: summary.topics ? JSON.parse(summary.topics as string) : null,
-  });
-});
-
-export { transcription };
+export { transcription, transcriptionPublic };

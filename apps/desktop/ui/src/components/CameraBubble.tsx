@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import { Square, Pause, Play, VideoOff } from "lucide-react";
 
 function formatElapsed(seconds: number): string {
@@ -21,8 +22,10 @@ export function CameraBubble() {
   const [paused, setPaused] = useState(false);
   const [webcamActive, setWebcamActive] = useState(false);
   const [stopping, setStopping] = useState(false);
+  const [controlsVisible, setControlsVisible] = useState(true);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
+  const hideTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Set dark background for the bubble window
   useEffect(() => {
@@ -89,6 +92,22 @@ export function CameraBubble() {
     }
   }, [paused]);
 
+  // Auto-hide controls after 3s of mouse inactivity
+  const resetHideTimer = useCallback(() => {
+    setControlsVisible(true);
+    if (hideTimeoutRef.current) clearTimeout(hideTimeoutRef.current);
+    hideTimeoutRef.current = setTimeout(() => {
+      setControlsVisible(false);
+    }, 3000);
+  }, []);
+
+  useEffect(() => {
+    resetHideTimer();
+    return () => {
+      if (hideTimeoutRef.current) clearTimeout(hideTimeoutRef.current);
+    };
+  }, [resetHideTimer]);
+
   const handleStop = useCallback(async () => {
     if (stopping) return;
     setStopping(true);
@@ -100,13 +119,50 @@ export function CameraBubble() {
     }
   }, [stopping]);
 
-  const handlePause = useCallback(() => {
-    setPaused((p) => !p);
-  }, []);
+  const handlePause = useCallback(async () => {
+    try {
+      if (paused) {
+        await invoke("resume_recording");
+        setPaused(false);
+      } else {
+        await invoke("pause_recording");
+        setPaused(true);
+      }
+    } catch (err) {
+      console.error("Pause/resume failed:", err);
+    }
+  }, [paused]);
+
+  // Listen for global shortcut events
+  useEffect(() => {
+    const unlistenStop = listen("shortcut-stop", () => {
+      handleStop();
+    });
+    const unlistenPause = listen("shortcut-pause-toggle", () => {
+      handlePause();
+    });
+    const unlistenDiscard = listen("shortcut-discard", async () => {
+      if (stopping) return;
+      setStopping(true);
+      try {
+        await invoke("stop_and_close_bubble");
+      } catch (err) {
+        console.error("Failed to discard:", err);
+        setStopping(false);
+      }
+    });
+    return () => {
+      unlistenStop.then((fn) => fn());
+      unlistenPause.then((fn) => fn());
+      unlistenDiscard.then((fn) => fn());
+    };
+  }, [handleStop, handlePause, stopping]);
 
   return (
     <div
       data-tauri-drag-region
+      onMouseMove={resetHideTimer}
+      onMouseEnter={resetHideTimer}
       className="flex flex-col items-center gap-3"
       style={{
         background: "#111827",
@@ -118,7 +174,7 @@ export function CameraBubble() {
         overflow: "hidden",
       }}
     >
-      {/* Webcam circle */}
+      {/* Webcam circle with pulsing glow ring */}
       <div data-tauri-drag-region className="relative">
         <div
           className="overflow-hidden rounded-full shadow-2xl"
@@ -126,6 +182,10 @@ export function CameraBubble() {
             width: "160px",
             height: "160px",
             border: "3px solid rgba(255,255,255,0.15)",
+            boxShadow: paused
+              ? "0 0 0 3px rgba(234,179,8,0.3)"
+              : "0 0 0 3px rgba(239,68,68,0.3)",
+            animation: paused ? "none" : "glow-pulse 2s ease-in-out infinite",
           }}
         >
           {webcamActive ? (
@@ -153,7 +213,7 @@ export function CameraBubble() {
           style={{
             top: "-4px",
             right: "-4px",
-            backgroundColor: "#ef4444",
+            backgroundColor: paused ? "#eab308" : "#ef4444",
           }}
         >
           <div
@@ -178,13 +238,16 @@ export function CameraBubble() {
         </div>
       </div>
 
-      {/* Controls bar */}
+      {/* Controls bar — auto-hide after 3s */}
       <div
         className="flex items-center gap-2 rounded-full px-3 shadow-xl"
         style={{
           backgroundColor: "rgba(0,0,0,0.85)",
           backdropFilter: "blur(12px)",
           height: "36px",
+          opacity: controlsVisible ? 1 : 0,
+          transition: "opacity 300ms ease",
+          pointerEvents: controlsVisible ? "auto" : "none",
         }}
       >
         {/* Timer */}
@@ -194,7 +257,7 @@ export function CameraBubble() {
             fontSize: "12px",
             fontFamily: "monospace",
             fontWeight: 500,
-            color: "rgba(255,255,255,0.9)",
+            color: paused ? "#eab308" : "rgba(255,255,255,0.9)",
             minWidth: "42px",
           }}
         >
@@ -210,13 +273,13 @@ export function CameraBubble() {
           }}
         />
 
-        {/* Pause/Resume */}
+        {/* Pause/Resume with shortcut label */}
         <button
           onClick={handlePause}
-          className="flex items-center justify-center rounded-full transition-colors"
+          className="flex items-center justify-center gap-0.5 rounded-full transition-colors"
           style={{
-            width: "28px",
             height: "28px",
+            paddingInline: "6px",
             color: "rgba(255,255,255,0.8)",
             background: "transparent",
             border: "none",
@@ -228,19 +291,20 @@ export function CameraBubble() {
           onMouseLeave={(e) =>
             (e.currentTarget.style.backgroundColor = "transparent")
           }
-          title={paused ? "Resume" : "Pause"}
+          title={`${paused ? "Resume" : "Pause"} (Cmd+Shift+P)`}
         >
           {paused ? <Play size={14} /> : <Pause size={14} />}
+          <span style={{ fontSize: "9px", opacity: 0.5 }}>P</span>
         </button>
 
-        {/* Stop */}
+        {/* Stop with shortcut label */}
         <button
           onClick={handleStop}
           disabled={stopping}
-          className="flex items-center justify-center rounded-full transition-colors"
+          className="flex items-center justify-center gap-0.5 rounded-full transition-colors"
           style={{
-            width: "28px",
             height: "28px",
+            paddingInline: "6px",
             backgroundColor: "#ef4444",
             color: "white",
             border: "none",
@@ -253,9 +317,10 @@ export function CameraBubble() {
           onMouseLeave={(e) => {
             if (!stopping) e.currentTarget.style.backgroundColor = "#ef4444";
           }}
-          title="Stop recording"
+          title="Stop recording (Cmd+Shift+R)"
         >
           <Square size={12} fill="white" />
+          <span style={{ fontSize: "9px", opacity: 0.7 }}>S</span>
         </button>
       </div>
 
@@ -263,6 +328,10 @@ export function CameraBubble() {
         @keyframes pulse {
           0%, 100% { opacity: 1; }
           50% { opacity: 0.3; }
+        }
+        @keyframes glow-pulse {
+          0%, 100% { box-shadow: 0 0 0 3px rgba(239,68,68,0.2); }
+          50% { box-shadow: 0 0 12px 3px rgba(239,68,68,0.4); }
         }
       `}</style>
     </div>

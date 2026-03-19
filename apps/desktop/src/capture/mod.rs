@@ -21,6 +21,7 @@ use serde::Serialize;
 pub enum CaptureStatus {
     Idle,
     Recording,
+    Paused,
     Stopping,
 }
 
@@ -37,6 +38,8 @@ pub struct StopResult {
     pub duration_ms: u64,
     pub video_frames: u64,
     pub audio_buffers: u64,
+    /// Pause intervals as `[start_offset_ms, end_offset_ms]` relative to recording start.
+    pub pause_intervals_ms: Vec<[u64; 2]>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -95,6 +98,8 @@ struct CaptureInner {
     recording_id: Option<String>,
     output_path: Option<PathBuf>,
     started_at: Option<std::time::Instant>,
+    /// Each entry is (pause_start, pause_end). End is None if currently paused.
+    pause_intervals: Vec<(std::time::Instant, Option<std::time::Instant>)>,
 }
 
 pub struct CaptureEngine {
@@ -113,6 +118,7 @@ impl CaptureEngine {
                 recording_id: None,
                 output_path: None,
                 started_at: None,
+                pause_intervals: Vec::new(),
             }),
             video_frames: Arc::new(AtomicU64::new(0)),
             audio_buffers: Arc::new(AtomicU64::new(0)),
@@ -121,19 +127,60 @@ impl CaptureEngine {
 
     pub fn is_recording(&self) -> bool {
         let inner = self.inner.lock().unwrap();
-        inner.status == CaptureStatus::Recording
+        inner.status == CaptureStatus::Recording || inner.status == CaptureStatus::Paused
+    }
+
+    pub fn is_paused(&self) -> bool {
+        let inner = self.inner.lock().unwrap();
+        inner.status == CaptureStatus::Paused
+    }
+
+    pub fn pause(&self) -> Result<(), String> {
+        let mut inner = self.inner.lock().unwrap();
+        if inner.status != CaptureStatus::Recording {
+            return Err("Not recording".to_string());
+        }
+        inner.status = CaptureStatus::Paused;
+        inner.pause_intervals.push((std::time::Instant::now(), None));
+        tracing::info!("Recording paused");
+        Ok(())
+    }
+
+    pub fn resume(&self) -> Result<(), String> {
+        let mut inner = self.inner.lock().unwrap();
+        if inner.status != CaptureStatus::Paused {
+            return Err("Not paused".to_string());
+        }
+        inner.status = CaptureStatus::Recording;
+        if let Some(last) = inner.pause_intervals.last_mut() {
+            last.1 = Some(std::time::Instant::now());
+        }
+        tracing::info!("Recording resumed");
+        Ok(())
     }
 
     pub fn status_info(&self) -> CaptureStatusInfo {
         let inner = self.inner.lock().unwrap();
+        let raw_duration = inner
+            .started_at
+            .map(|t| t.elapsed().as_millis() as u64)
+            .unwrap_or(0);
+
+        // Subtract paused time for effective duration
+        let paused_ms: u64 = inner
+            .pause_intervals
+            .iter()
+            .map(|(start, end)| {
+                let end_time = end.unwrap_or_else(std::time::Instant::now);
+                (end_time - *start).as_millis() as u64
+            })
+            .sum();
+
         CaptureStatusInfo {
             status: inner.status.clone(),
             video_frames: self.video_frames.load(Ordering::Relaxed),
             audio_buffers: self.audio_buffers.load(Ordering::Relaxed),
-            duration_ms: inner
-                .started_at
-                .map(|t| t.elapsed().as_millis() as u64)
-                .unwrap_or(0),
+            duration_ms: raw_duration.saturating_sub(paused_ms),
         }
     }
 
@@ -215,6 +262,7 @@ impl CaptureEngine {
         inner.recording_id = Some(recording_id.clone());
         inner.output_path = Some(output_path.clone());
         inner.started_at = Some(std::time::Instant::now());
+        inner.pause_intervals.clear();
 
         tracing::info!("Capture started: {recording_id} -> {}", output_path.display());
 
@@ -227,8 +275,17 @@ impl CaptureEngine {
     pub fn stop(&self) -> Result<StopResult, String> {
         let mut inner = self.inner.lock().unwrap();
 
-        if inner.status != CaptureStatus::Recording {
+        if inner.status != CaptureStatus::Recording && inner.status != CaptureStatus::Paused {
             return Err("Not recording".to_string());
+        }
+
+        // Close current pause interval if paused
+        if inner.status == CaptureStatus::Paused {
+            if let Some(last) = inner.pause_intervals.last_mut() {
+                if last.1.is_none() {
+                    last.1 = Some(std::time::Instant::now());
+                }
+            }
         }
 
         inner.status = CaptureStatus::Stopping;
@@ -244,10 +301,34 @@ impl CaptureEngine {
                 .map_err(|e| format!("Failed to stop capture: {e}"))?;
         }
 
-        let duration_ms = inner
+        let raw_duration_ms = inner
             .started_at
             .map(|t| t.elapsed().as_millis() as u64)
             .unwrap_or(0);
+
+        // Calculate effective duration (minus paused time)
+        let paused_ms: u64 = inner
+            .pause_intervals
+            .iter()
+            .map(|(start, end)| {
+                let end_time = end.unwrap_or_else(std::time::Instant::now);
+                (end_time - *start).as_millis() as u64
+            })
+            .sum();
+
+        // Convert pause intervals to ms offsets from recording start
+        let started_at = inner.started_at.unwrap_or_else(std::time::Instant::now);
+        let pause_intervals_ms: Vec<[u64; 2]> = inner
+            .pause_intervals
+            .iter()
+            .map(|(start, end)| {
+                let start_offset = (*start - started_at).as_millis() as u64;
+                let end_offset = end
+                    .map(|e| (e - started_at).as_millis() as u64)
+                    .unwrap_or(raw_duration_ms);
+                [start_offset, end_offset]
+            })
+            .collect();
 
         let result = StopResult {
             recording_id: inner.recording_id.clone().unwrap_or_default(),
@@ -256,21 +337,24 @@ impl CaptureEngine {
                 .as_ref()
                 .map(|p| p.to_string_lossy().to_string())
                 .unwrap_or_default(),
-            duration_ms,
+            duration_ms: raw_duration_ms.saturating_sub(paused_ms),
             video_frames: self.video_frames.load(Ordering::Relaxed),
             audio_buffers: self.audio_buffers.load(Ordering::Relaxed),
+            pause_intervals_ms,
         };
 
-        // Reset state (stream and recording_output already taken above)
+        // Reset state
         inner.status = CaptureStatus::Idle;
         inner.recording_id = None;
         inner.output_path = None;
         inner.started_at = None;
+        inner.pause_intervals.clear();
 
         tracing::info!(
-            "Capture stopped: {} ({} ms, {} video frames, {} audio buffers)",
+            "Capture stopped: {} ({} ms effective, {} pauses, {} video frames, {} audio buffers)",
             result.recording_id,
             result.duration_ms,
+            result.pause_intervals_ms.len(),
             result.video_frames,
             result.audio_buffers
         );

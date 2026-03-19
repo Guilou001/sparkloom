@@ -40,6 +40,41 @@ pub struct UploadSegmentResponse {
     pub segment_index: i32,
 }
 
+#[derive(Debug, Serialize)]
+pub struct SaveSummaryBody {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub title: Option<String>,
+    pub summary: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub key_points: Option<Vec<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub action_items: Option<Vec<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sentiment: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub topics: Option<Vec<String>>,
+    pub model_used: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct SaveTranscriptionBody {
+    pub full_text: String,
+    pub language: String,
+    pub model_used: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub confidence: Option<f32>,
+    pub words: Vec<TranscriptionWordBody>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct TranscriptionWordBody {
+    pub word: String,
+    pub start_ms: i64,
+    pub end_ms: i64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub confidence: Option<f32>,
+}
+
 impl ApiClient {
     pub fn new(base_url: &str, api_key: Option<String>) -> Self {
         Self {
@@ -133,6 +168,108 @@ impl ApiClient {
         resp.json::<UploadSegmentResponse>()
             .await
             .map_err(|e| format!("Failed to parse upload response: {e}"))
+    }
+
+    /// POST /api/videos/:id/transcription — Save transcription to backend.
+    pub async fn save_transcription(
+        &self,
+        video_id: &str,
+        body: &SaveTranscriptionBody,
+    ) -> Result<(), String> {
+        let url = format!(
+            "{}/api/videos/{}/transcription",
+            self.base_url, video_id
+        );
+        let mut builder = self.client.post(&url).json(body);
+        if let Some(auth) = self.auth_header() {
+            builder = builder.header("Authorization", auth);
+        }
+
+        let resp = builder
+            .send()
+            .await
+            .map_err(|e| format!("Failed to save transcription: {e}"))?;
+
+        if !resp.status().is_success() {
+            let status = resp.status();
+            let body = resp.text().await.unwrap_or_default();
+            return Err(format!("Save transcription failed ({status}): {body}"));
+        }
+
+        Ok(())
+    }
+
+    /// POST /api/videos/:id/summary — Save AI summary to backend.
+    pub async fn save_summary(
+        &self,
+        video_id: &str,
+        body: &SaveSummaryBody,
+    ) -> Result<(), String> {
+        let url = format!("{}/api/videos/{}/summary", self.base_url, video_id);
+        let mut builder = self.client.post(&url).json(body);
+        if let Some(auth) = self.auth_header() {
+            builder = builder.header("Authorization", auth);
+        }
+
+        let resp = builder
+            .send()
+            .await
+            .map_err(|e| format!("Failed to save summary: {e}"))?;
+
+        if !resp.status().is_success() {
+            let status = resp.status();
+            let body = resp.text().await.unwrap_or_default();
+            return Err(format!("Save summary failed ({status}): {body}"));
+        }
+
+        Ok(())
+    }
+
+    /// DELETE /api/videos/:id — Delete a video and all associated data.
+    pub async fn delete_video(&self, video_id: &str) -> Result<(), String> {
+        let url = format!("{}/api/videos/{}", self.base_url, video_id);
+        let mut builder = self.client.delete(&url);
+        if let Some(auth) = self.auth_header() {
+            builder = builder.header("Authorization", auth);
+        }
+
+        let resp = builder
+            .send()
+            .await
+            .map_err(|e| format!("Failed to delete video: {e}"))?;
+
+        if !resp.status().is_success() {
+            let status = resp.status();
+            let body = resp.text().await.unwrap_or_default();
+            return Err(format!("Delete video failed ({status}): {body}"));
+        }
+
+        Ok(())
+    }
+
+    /// PATCH /api/videos/:id — Update video title.
+    pub async fn update_video_title(&self, video_id: &str, title: &str) -> Result<(), String> {
+        let url = format!("{}/api/videos/{}", self.base_url, video_id);
+        let mut builder = self
+            .client
+            .patch(&url)
+            .json(&serde_json::json!({ "title": title }));
+        if let Some(auth) = self.auth_header() {
+            builder = builder.header("Authorization", auth);
+        }
+
+        let resp = builder
+            .send()
+            .await
+            .map_err(|e| format!("Failed to update video: {e}"))?;
+
+        if !resp.status().is_success() {
+            let status = resp.status();
+            let body = resp.text().await.unwrap_or_default();
+            return Err(format!("Update video failed ({status}): {body}"));
+        }
+
+        Ok(())
     }
 
     /// POST /api/videos/:id/stop — Mark recording as stopped.

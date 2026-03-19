@@ -9,7 +9,7 @@ SparkLoom is a free ($0/month) Loom clone for personal use on macOS Apple Silico
 - **Desktop app**: Tauri v2 (Rust backend + React/TypeScript frontend in WebView)
 - **Backend**: Cloudflare Workers (Hono) + R2 (video storage) + D1 (SQLite metadata)
 - **Web viewer**: Cloudflare Pages (React + hls.js)
-- **AI**: whisper-cpp-plus-rs (Metal GPU transcription) + Ollama/Qwen 3.5 4B (local summaries)
+- **AI**: whisper-rs 0.16 with Metal GPU (transcription) + Ollama/Qwen 3.5 4B (local summaries)
 
 ## Monorepo Structure
 
@@ -34,7 +34,7 @@ sparkloom/
 | State | Zustand 5 | Minimal boilerplate |
 | Screen capture | screencapturekit-rs | Native Apple ScreenCaptureKit bindings |
 | HW encoding | VideoToolbox (objc2) | Zero-cost HEVC on Apple Silicon |
-| Transcription | whisper-cpp-plus-rs (Metal) | On-device, fast, free |
+| Transcription | whisper-rs 0.16 (Metal) | On-device, fast, free |
 | Summaries | Ollama + Qwen 3.5 4B | Local LLM, free, 3.4GB |
 | API | Cloudflare Workers + Hono | 100K req/day free |
 | Video storage | Cloudflare R2 | 10GB free + free egress |
@@ -92,5 +92,6 @@ pnpm typecheck          # TypeScript type checking
 
 - macOS Apple Silicon (16GB RAM)
 - Rust 1.94+, Node.js 22+, pnpm 10+
-- FFmpeg 8+ (for audio extraction)
+- CMake 4+ (for building whisper.cpp)
+- FFmpeg 8+ (for audio/video extraction)
 - Ollama with qwen3.5:4b model

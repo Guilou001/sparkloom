@@ -135,6 +135,27 @@ videos.post("/:id/stop", async (c) => {
   return c.json({ ok: true });
 });
 
+// GET /api/videos/search?q=... — Search videos by title + transcription
+videos.get("/search", async (c) => {
+  const q = c.req.query("q")?.trim();
+  if (!q) {
+    return c.json({ data: [] });
+  }
+
+  const pattern = `%${q}%`;
+  const result = await c.env.DB.prepare(
+    `SELECT DISTINCT v.* FROM videos v
+     LEFT JOIN transcriptions t ON t.video_id = v.id
+     WHERE v.title LIKE ? OR t.full_text LIKE ?
+     ORDER BY v.created_at DESC
+     LIMIT 50`
+  )
+    .bind(pattern, pattern)
+    .all<Video>();
+
+  return c.json({ data: result.results });
+});
+
 // DELETE /api/videos/:id — Delete video + all R2 segments
 videos.delete("/:id", async (c) => {
   const id = c.req.param("id");

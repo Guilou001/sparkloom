@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { AnimatePresence, motion } from "motion/react";
 import { Square, Pause, Play, Monitor, AlertCircle } from "lucide-react";
 import {
   useRecordingStore,
@@ -33,12 +34,19 @@ function CountdownOverlay({ onComplete }: { onComplete: () => void }) {
   return (
     <div className="flex h-full items-center justify-center">
       <div className="text-center">
-        <div
-          className="mb-4 text-8xl font-bold tabular-nums"
-          style={{ color: "var(--color-primary)" }}
-        >
-          {count}
-        </div>
+        <AnimatePresence mode="wait">
+          <motion.div
+            key={count}
+            initial={{ scale: 1.5, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            exit={{ scale: 0.5, opacity: 0 }}
+            transition={{ duration: 0.4, ease: "easeOut" }}
+            className="mb-4 text-8xl font-bold tabular-nums"
+            style={{ color: "var(--color-primary)" }}
+          >
+            {count}
+          </motion.div>
+        </AnimatePresence>
         <p style={{ color: "var(--color-text-secondary)" }}>Recording starts in...</p>
       </div>
     </div>
@@ -198,16 +206,18 @@ export function RecordingControls() {
 
       {/* Controls */}
       <div className="flex items-center gap-4">
-        <button
+        <motion.button
+          whileTap={{ scale: 0.9 }}
           onClick={handlePauseResume}
           className="flex h-12 w-12 items-center justify-center rounded-full transition-colors hover:bg-white/10"
           style={{ backgroundColor: "var(--color-surface-elevated)" }}
           title={status === "recording" ? "Pause" : "Resume"}
         >
           {status === "recording" ? <Pause size={20} /> : <Play size={20} />}
-        </button>
+        </motion.button>
 
-        <button
+        <motion.button
+          whileTap={{ scale: 0.9 }}
           onClick={handleStop}
           className="flex h-14 w-14 items-center justify-center rounded-full text-white transition-colors"
           style={{ backgroundColor: "var(--color-danger)" }}
@@ -220,7 +230,7 @@ export function RecordingControls() {
           title="Stop recording"
         >
           <Square size={22} fill="white" />
-        </button>
+        </motion.button>
       </div>
 
       <style>{`

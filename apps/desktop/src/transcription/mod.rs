@@ -1,2 +1,7 @@
-// Whisper transcription + Ollama summary bridge
-// Phase 3, Weeks 7-8
+pub mod audio;
+pub mod model_manager;
+pub mod summary;
+pub mod whisper;
+
+pub use summary::OllamaEngine;
+pub use whisper::WhisperEngine;

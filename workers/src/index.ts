@@ -5,7 +5,7 @@ import { authMiddleware } from "./middleware/auth";
 import { videos } from "./routes/videos";
 import { segments } from "./routes/segments";
 import { manifest } from "./routes/manifest";
-import { transcription } from "./routes/transcription";
+import { transcription, transcriptionPublic } from "./routes/transcription";
 
 export type Env = {
   DB: D1Database;
@@ -27,6 +27,7 @@ app.get("/health", (c) => c.json({ ok: true }));
 // Public routes (no auth required)
 app.route("/api/videos", manifest); // manifest.m3u8, share/:token
 app.route("/api/videos", segments); // GET segments (for HLS playback)
+app.route("/api/videos", transcriptionPublic); // GET transcription + summary (read-only)
 
 // Authenticated routes
 app.use("/api/*", authMiddleware);
